@@ -25,24 +25,23 @@ class ThreadPool {
             this->threads.reserve(this->threadcount);
             for (size_t i = 0; i < this->threadcount; ++i)
                 this->threads.push_back(std::thread(worker, this));
-
             std::cout << this->threadcount << " threads created for dispatch\n";
         }
 
         static void worker(ThreadPool* threadpool)
         {
             for (;;) {
-                if (threadpool->thread_terminate) break;
+                if (threadpool->thread_terminate) return;
 
                 std::unique_lock<std::mutex> qLock(threadpool->qMutex);
-                
+
                 if (threadpool->taskQueue.empty()) {
                     threadpool->tCond.wait(qLock, [&]() {
                             return threadpool->thread_terminate || !threadpool->taskQueue.empty();
                     });
                 }
 
-                if (threadpool->thread_terminate) break;
+                if (threadpool->thread_terminate) return;
 
                 auto work = std::move(threadpool->taskQueue.front());
                 threadpool->taskQueue.pop();
@@ -71,9 +70,10 @@ class ThreadPool {
 
         ~ThreadPool()
         {
-            std::lock_guard<std::mutex> qLock(this->qMutex);
-            for (;!this->taskQueue.empty(); this->taskQueue.pop())
-                ;
+            std::unique_lock<std::mutex> qLock(this->qMutex);
+                for (;!this->taskQueue.empty(); this->taskQueue.pop())
+                    ;
+            qLock.unlock();
 
             this->thread_terminate = true;
             this->tCond.notify_all();
@@ -97,4 +97,3 @@ class ThreadPool {
 };
 
 #endif
-
