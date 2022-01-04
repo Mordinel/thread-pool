@@ -82,6 +82,14 @@ class ThreadPool {
                 t.join();
         }
 
+        bool Empty()
+        {
+            std::unique_lock<std::mutex> qLock(this->qMutex);
+            bool isEmpty = this->taskQueue.empty();
+            qLock.unlock();
+            return isEmpty;
+        }
+
         template<typename Function, typename... Args>
         void Dispatch(Function&& func, Args&&... args)
         {
