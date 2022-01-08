@@ -33,9 +33,9 @@ class ThreadPool {
         std::atomic<bool> thread_terminate;
         unsigned int threadcount;
         std::vector<std::thread> threads;
-        std::queue<std::function<void()>> taskQueue;
-        std::mutex qMutex;
-        std::condition_variable tCond;
+        std::queue<std::function<void()>> task_queue;
+        std::mutex thread_queue_mtx;
+        std::condition_variable thread_conditional;
 
         void init_threadpool()
         {
@@ -50,20 +50,20 @@ class ThreadPool {
             for (;;) {
                 if (threadpool->thread_terminate) return;
 
-                std::unique_lock<std::mutex> qLock(threadpool->qMutex);
+                std::unique_lock<std::mutex> thread_queue_lock(threadpool->thread_queue_mtx);
 
-                if (threadpool->taskQueue.empty()) {
-                    threadpool->tCond.wait(qLock, [&]() {
-                            return threadpool->thread_terminate || !threadpool->taskQueue.empty();
+                if (threadpool->task_queue.empty()) {
+                    threadpool->thread_conditional.wait(thread_queue_lock, [&]() {
+                            return threadpool->thread_terminate || !threadpool->task_queue.empty();
                     });
                 }
 
                 if (threadpool->thread_terminate) return;
 
-                auto work = std::move(threadpool->taskQueue.front());
-                threadpool->taskQueue.pop();
+                auto work = std::move(threadpool->task_queue.front());
+                threadpool->task_queue.pop();
 
-                qLock.unlock();
+                thread_queue_lock.unlock();
 
                 work();
             }
@@ -87,37 +87,37 @@ class ThreadPool {
 
         ~ThreadPool()
         {
-            std::unique_lock<std::mutex> qLock(this->qMutex);
-                for (;!this->taskQueue.empty(); this->taskQueue.pop())
+            std::unique_lock<std::mutex> thread_queue_lock(this->thread_queue_mtx);
+                for (;!this->task_queue.empty(); this->task_queue.pop())
                     ;
-            qLock.unlock();
+            thread_queue_lock.unlock();
 
             this->thread_terminate = true;
-            this->tCond.notify_all();
+            this->thread_conditional.notify_all();
 
             for (std::thread& t : this->threads)
                 t.join();
         }
 
-        bool Empty()
+        bool empty()
         {
-            std::unique_lock<std::mutex> qLock(this->qMutex);
-            bool isEmpty = this->taskQueue.empty();
-            qLock.unlock();
+            std::unique_lock<std::mutex> thread_queue_lock(this->thread_queue_mtx);
+            bool isEmpty = this->task_queue.empty();
+            thread_queue_lock.unlock();
             return isEmpty;
         }
 
         template<typename Function, typename... Args>
-        void Dispatch(Function&& func, Args&&... args)
+        void dispatch(Function&& func, Args&&... args)
         {
             auto task = std::make_shared<std::packaged_task<typename std::result_of<Function(Args...)>::type()>>(
                         std::bind(std::forward<Function>(func), std::forward<Args>(args)...));
 
-            std::unique_lock<std::mutex> qLock(this->qMutex);
-                this->taskQueue.emplace([task]() { (*task)(); });
-            qLock.unlock();
+            std::unique_lock<std::mutex> thread_queue_lock(this->thread_queue_mtx);
+                this->task_queue.emplace([task]() { (*task)(); });
+            thread_queue_lock.unlock();
 
-            this->tCond.notify_one();
+            this->thread_conditional.notify_one();
         }
 };
 
