@@ -15,8 +15,7 @@
 *     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef THREAD_POOL_H
-#define THREAD_POOL_H
+#pragma once
 
 #include <condition_variable>
 #include <functional>
@@ -121,4 +120,3 @@ class ThreadPool {
         }
 };
 
-#endif
